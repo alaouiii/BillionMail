@@ -1,37 +1,38 @@
-# المرحلة 1: بناء البرنامج (Build Stage)
+# المرحلة 1: بناء البرنامج
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# تثبيت الأدوات الضرورية للبناء
+# تثبيت git
 RUN apk add --no-cache git
 
-# نسخ ملفات الـ Go modules (إلا كانت كاينة فـ الـ Root)
-COPY go.mod go.sum ./
+# نسخ ملفات الموديول بطريقة مرنة
+# استعملنا النجمة * باش ينسخ go.mod و go.sum إلا كان موجود، وبلا ما يفشل إلا مالقاش go.sum
+COPY go.mod* go.sum* ./
+
+# تحميل المكتبات (إلا فشل ماشي مشكل غيدوز للخطوة الجاية)
 RUN go mod download || true
 
-# نسخ كاع الملفات للـ Container
+# نسخ كاع الكود
 COPY . .
 
-# بناء البرنامج من المسار اللي عطيتيني
-# غادي نبنيوه ونسميوه "billionapp"
+# بناء البرنامج
+# تأكدنا من المسار اللي عطيتيني BillionMail/core/main.go
 RUN go build -o billionapp ./BillionMail/core/main.go
 
-# المرحلة 2: التشغيل (Runtime Stage)
+# المرحلة 2: التشغيل
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates libc6-compat
 WORKDIR /root/
 
-# نسخ البرنامج اللي بنينا من المرحلة الأولى
+# نسخ البرنامج
 COPY --from=builder /app/billionapp .
 
-# نسخ المجلدات الضرورية (BillionMail كيحتاج الـ views والـ public باش يبان)
-# إلا كانت هاد المجلدات وسط BillionMail، غادي ننسخوها
+# نسخ مجلدات العرض (إلا كانت موجودة)
 COPY --from=builder /app/BillionMail/view ./view 2>/dev/null || true
 COPY --from=builder /app/BillionMail/public ./public 2>/dev/null || true
 
-# البورت الافتراضي لـ Go هو 8080 (أو بدلو لـ 3000 إلا كان السكربت كيخدم بيه)
+# البورت
 EXPOSE 8080
 
-# تشغيل البرنامج
 CMD ["./billionapp"]
