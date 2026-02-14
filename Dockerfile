@@ -1,39 +1,36 @@
 # المرحلة 1: البناء
 FROM golang:1.21-alpine AS builder
 
+# WORKDIR الرئيسي
 WORKDIR /app
 
-# تثبيت git
-RUN apk add --no-cache git
+# تثبيت الأدوات الضرورية
+RUN apk add --no-cache git gcc musl-dev
 
-# نسخ كل الملفات
+# نسخ كاع الملفات للـ Container
 COPY . .
 
-# الانتقال إلى مجلد BillionMail حيث يوجد الكود
-WORKDIR /app/BillionMail
+# الانتقال للمجلد اللي فيه go.mod و go.sum والمباشرة بالبناء
+WORKDIR /app/BillionMail/core
 
-# تهيئة Go modules
-RUN go mod init github.com/alaouiii/BillionMail || true
-RUN go mod tidy || true
+# تحميل المكتبات وبناء البرنامج (billionapp)
+RUN go mod download
+RUN go build -o /app/billionapp main.go
 
-# بناء البرنامج
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /app/billionapp ./core/main.go
-
-# المرحلة 2: التشغيل
+# المرحلة 2: التشغيل (تصغير حجم الصورة)
 FROM alpine:latest
-
 RUN apk add --no-cache ca-certificates libc6-compat
+WORKDIR /app
 
-WORKDIR /root/
-
-# نسخ البرنامج المبني من المرحلة الأولى
+# نسخ البرنامج اللي بنينا
 COPY --from=builder /app/billionapp .
 
-# نسخ الملفات المطلوبة إن وجدت
-COPY --from=builder /app/BillionMail/config ./config 2>/dev/null || true
-COPY --from=builder /app/BillionMail/templates ./templates 2>/dev/null || true
+# نسخ المجلدات الضرورية (view و public) باش السكربت يلقى الصفحات
+# غادي ننسخوهم للـ Root ديال البرنامج فـ /app
+COPY --from=builder /app/BillionMail/view ./view
+COPY --from=builder /app/BillionMail/public ./public
 
-# تعريف المنفذ
+# البورت (BillionMail Go غالباً كيخدم بـ 8080)
 EXPOSE 8080
 
 # تشغيل البرنامج
