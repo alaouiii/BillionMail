@@ -1,22 +1,37 @@
-FROM php:8.1-apache
+# المرحلة 1: بناء البرنامج (Build Stage)
+FROM golang:1.21-alpine AS builder
 
-# تثبيت الإضافات
-RUN docker-php-ext-install mysqli && docker-php-ext-enable mysqli
+WORKDIR /app
 
-# نسخ كاع الملفات
-COPY . /var/www/html/
+# تثبيت الأدوات الضرورية للبناء
+RUN apk add --no-cache git
 
-# هاد السطر كيتأكد بلي Apache كيشوف المجلد الصحيح حتى لو كان وسط مجلد آخر
-# غادي نصلحو الصلاحيات ونخليو Apache يقرأ كولشي
-RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html
+# نسخ ملفات الـ Go modules (إلا كانت كاينة فـ الـ Root)
+COPY go.mod go.sum ./
+RUN go mod download || true
 
-# تفعيل خاصية Dir Listing (غير باش نتأكدو فين كاينين الملفات)
-RUN echo "<Directory /var/www/html/> \n\
-    Options Indexes FollowSymLinks \n\
-    AllowOverride All \n\
-    Require all granted \n\
-    </Directory>" > /etc/apache2/conf-available/docker-php.conf \
-    && a2enconf docker-php
+# نسخ كاع الملفات للـ Container
+COPY . .
 
-EXPOSE 80
+# بناء البرنامج من المسار اللي عطيتيني
+# غادي نبنيوه ونسميوه "billionapp"
+RUN go build -o billionapp ./BillionMail/core/main.go
+
+# المرحلة 2: التشغيل (Runtime Stage)
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates libc6-compat
+WORKDIR /root/
+
+# نسخ البرنامج اللي بنينا من المرحلة الأولى
+COPY --from=builder /app/billionapp .
+
+# نسخ المجلدات الضرورية (BillionMail كيحتاج الـ views والـ public باش يبان)
+# إلا كانت هاد المجلدات وسط BillionMail، غادي ننسخوها
+COPY --from=builder /app/BillionMail/view ./view 2>/dev/null || true
+COPY --from=builder /app/BillionMail/public ./public 2>/dev/null || true
+
+# البورت الافتراضي لـ Go هو 8080 (أو بدلو لـ 3000 إلا كان السكربت كيخدم بيه)
+EXPOSE 8080
+
+# تشغيل البرنامج
+CMD ["./billionapp"]
